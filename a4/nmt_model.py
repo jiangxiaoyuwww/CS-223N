@@ -320,11 +320,13 @@ class NMT(nn.Module):
         ###         https://pytorch.org/docs/stable/torch.html#torch.unsqueeze
         ###     Tensor Squeeze:
         ###         https://pytorch.org/docs/stable/torch.html#torch.squeeze
-        dec_hidden, dec_cell = dec_state[0], dec_state[1]
-        dec_state = self.decoder(Ybar_t, dec_state)
-        dec_hidden = torch.unsqueeze(dec_hidden, 1)
-        enc_hiddens_proj = torch.transpose(enc_hiddens_proj, 1, 2)
-        e_t = torch.squeeze(torch.bmm(dec_hidden, enc_hiddens_proj),1)
+        dec_prev_h, dec_prev_c = dec_state
+        dec_state = self.decoder(Ybar_t, (dec_prev_h, dec_prev_c))
+        dec_hidden, dec_cell = dec_state
+        dec_hidden_unsqueezed = torch.unsqueeze(dec_hidden, 2)
+
+        e_t = enc_hiddens_proj.bmm(dec_hidden_unsqueezed)  # (b, src_len, 1)
+        e_t = e_t.squeeze(dim=2)  # (b, src_len)
 
 
         ### END YOUR CODE
@@ -364,9 +366,13 @@ class NMT(nn.Module):
         alpha_t = torch.unsqueeze(alpha_t, 1)
         a_t = torch.bmm(alpha_t, enc_hiddens)
         a_t = torch.squeeze(a_t, 1)
-        U_t = torch.cat((torch.squeeze(dec_hidden, 1), a_t), 1)
-        V_t = self.combined_output_projection(U_t)
-        O_t = self.dropout(torch.tanh(V_t))
+        U_t = torch.cat([a_t, dec_hidden], dim=1)  # (b, 3h)
+
+        # 4. Apply the combiend output projection layer to U_t to compute V_t
+        V_t = self.combined_output_projection(U_t)  # (b, h)
+
+        # 5. Compute O_t by applying tanh and then dropout
+        O_t = self.dropout(V_t.tanh())  # (b, h)
 
 
         ### END YOUR CODE
